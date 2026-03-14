@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library Book Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #eef2f7;
+           min-height: 100vh; display: flex; align-items: center;
+           justify-content: center; padding: 1rem; }
+    .card { background: white; border-radius: 16px; padding: 1.75rem;
+            width: 100%; max-width: 420px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+    h1 { font-size: 1.4rem; margin-bottom: 0.2rem; }
+    .sub { color: #777; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .upload-zone { border: 2.5px dashed #c7d2e0; border-radius: 12px;
+                   padding: 1.5rem; text-align: center; cursor: pointer;
+                   position: relative; transition: border-color 0.2s, background 0.2s;
+                   margin-bottom: 1rem; }
+    .upload-zone:hover { border-color: #4f46e5; background: #f5f3ff; }
+    .upload-zone input { position: absolute; inset: 0; opacity: 0;
+                         cursor: pointer; width: 100%; height: 100%; }
+    .upload-zone .icon { font-size: 2rem; margin-bottom: 0.4rem; }
+    .upload-zone p { font-size: 0.85rem; color: #555; }
+    #preview { display: none; width: 100%; max-height: 180px; object-fit: contain;
+               border-radius: 10px; border: 2px solid #e2e8f0; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 600;
+            color: #555; margin-bottom: 0.25rem; }
+    .isbn-badge { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px;
+                  padding: 0.5rem 0.75rem; font-size: 0.85rem; color: #065f46;
+                  margin-bottom: 1rem; display: none; }
+    .isbn-badge span { font-weight: 700; }
+    input[type="text"] { width: 100%; padding: 0.55rem 0.7rem;
+                         border: 1.5px solid #e2e8f0; border-radius: 8px;
+                         font-size: 0.9rem; margin-bottom: 1rem; }
+    input:focus, select:focus { outline: none; border-color: #4f46e5; }
+    .price-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .price-row select { padding: 0.55rem 0.5rem; border: 1.5px solid #e2e8f0;
+                        border-radius: 8px; font-size: 0.9rem; background: white;
+                        cursor: pointer; flex-shrink: 0; }
+    .price-row input { margin-bottom: 0; flex: 1; }
+    button.primary { width: 100%; padding: 0.85rem; background: #4f46e5; color: white;
+                     border: none; border-radius: 10px; font-size: 1rem;
+                     font-weight: 600; cursor: pointer; }
+    button.primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+    #status { margin-top: 1rem; font-size: 0.88rem; text-align: center; color: #555; }
+    .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid #ddd;
+               border-top-color: #4f46e5; border-radius: 50%;
+               animation: spin 0.7s linear infinite; margin-right: 5px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .warn { background: #fff7ed; border: 1.5px solid #fed7aa; border-radius: 8px;
+            padding: 0.5rem 0.75rem; font-size: 0.82rem; color: #9a3412;
+            margin-bottom: 1rem; display: none; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>📚 Library Book Scanner</h1>
+  <p class="sub">Photo the back cover barcode, enter accession no. and price, then submit.</p>
+
+  <div class="upload-zone">
+    <input type="file" id="photo" accept="image/*" capture="environment">
+    <div class="icon">📷</div>
+    <p id="zone-text">Tap to take photo or upload</p>
+  </div>
+
+  <img id="preview" src="" alt="Preview">
+
+  <div class="isbn-badge" id="isbn-badge">
+    📦 ISBN detected: <span id="isbn-display">—</span>
+  </div>
+  <div class="warn" id="warn">
+    ⚠️ Barcode not detected. Try a clearer photo with the barcode fully visible.
+  </div>
+
+  <label>Accession No. *</label>
+  <input type="text" id="accession" placeholder="e.g. LIB-0042">
+
+  <label>Price *</label>
+  <div class="price-row">
+    <select id="currency">
+      <option value="₹">₹ INR</option>
+      <option value="$">$ USD</option>
+      <option value="CA$">CA$ CAD</option>
+      <option value="€">€ EUR</option>
+    </select>
+    <input type="text" id="price" placeholder="e.g. 399">
+  </div>
+
+  <button class="primary" id="submitBtn" onclick="submitBook()" disabled>
+    📥 Submit Book
+  </button>
+  <div id="status"></div>
+</div>
+
+<script>
+  const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+  let detectedISBN = null;
+
+  document.getElementById('photo').addEventListener('change', async function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      document.getElementById('preview').src = ev.target.result;
+      document.getElementById('preview').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+
+    setStatus('<span class="spinner"></span> Scanning barcode...');
+    document.getElementById('isbn-badge').style.display = 'none';
+    document.getElementById('warn').style.display = 'none';
+    document.getElementById('submitBtn').disabled = true;
+
+    try {
+      const isbn = await scanBarcode(file);
+      detectedISBN = isbn;
+      document.getElementById('isbn-display').textContent = isbn;
+      document.getElementById('isbn-badge').style.display = 'block';
+      document.getElementById('zone-text').textContent = '✅ Photo selected';
+      document.getElementById('submitBtn').disabled = false;
+      setStatus('');
+    } catch {
+      detectedISBN = null;
+      document.getElementById('warn').style.display = 'block';
+      document.getElementById('zone-text').textContent = '⚠️ Retake photo';
+      setStatus('');
+    }
+  });
+
+  function scanBarcode(file) {
+    return new Promise((resolve, reject) => {
+      Html5Qrcode.scanFile(file, true)
+        .then(result => {
+          const cleaned = result.replace(/-/g, '');
+          if (/^97[89]\d{10}$/.test(cleaned) || /^\d{10}$/.test(cleaned)) {
+            resolve(cleaned);
+          } else reject('Not a valid ISBN');
+        })
+        .catch(reject);
+    });
+  }
+
+  async function submitBook() {
+    const accession = document.getElementById('accession').value.trim();
+    const currency  = document.getElementById('currency').value;
+    const price     = currency + document.getElementById('price').value.trim();
+    if (!accession) { setStatus('⚠️ Please enter Accession No.'); return; }
+    if (!detectedISBN) { setStatus('⚠️ No ISBN detected. Retake photo.'); return; }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    setStatus('<span class="spinner"></span> Fetching book details & saving...');
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ isbn: detectedISBN, accessionNo: accession, price }),
+        headers: { 'Content-Type': 'text/plain' }
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error);
+      setStatus('✅ "' + result.title + '" saved!');
+      setTimeout(resetForm, 2000);
+    } catch (err) {
+      setStatus('❌ Error: ' + err.message);
+      btn.disabled = false;
+    }
+  }
+
+  function resetForm() {
+    document.getElementById('photo').value = '';
+    document.getElementById('preview').style.display = 'none';
+    document.getElementById('isbn-badge').style.display = 'none';
+    document.getElementById('warn').style.display = 'none';
+    document.getElementById('accession').value = '';
+    document.getElementById('price').value = '';
+    document.getElementById('currency').selectedIndex = 0;
+    document.getElementById('zone-text').textContent = 'Tap to take photo or upload';
+    document.getElementById('status').innerHTML = '';
+    document.getElementById('submitBtn').disabled = true;
+    detectedISBN = null;
+  }
+
+  function setStatus(html) { document.getElementById('status').innerHTML = html; }
+</script>
+</body>
+</html>
