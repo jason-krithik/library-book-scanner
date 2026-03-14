@@ -23,8 +23,7 @@
     .upload-zone input { position: absolute; inset: 0; opacity: 0;
                          cursor: pointer; width: 100%; height: 100%; }
     .upload-zone .icon { font-size: 1.4rem; margin-bottom: 0.2rem; }
-    .upload-zone .label { font-size: 0.7rem; font-weight: 600; color: #444;
-                          margin-bottom: 0.15rem; }
+    .upload-zone .label { font-size: 0.7rem; font-weight: 600; color: #444; margin-bottom: 0.15rem; }
     .upload-zone .hint { font-size: 0.65rem; color: #888; }
 
     .previews { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
@@ -42,28 +41,29 @@
                      border: none; border-radius: 10px; font-size: 1rem;
                      font-weight: 600; cursor: pointer; }
     button.primary:disabled { background: #a5b4fc; cursor: not-allowed; }
-    button.secondary { width: 100%; padding: 0.65rem; background: white; color: #4f46e5;
-                       border: 1.5px solid #4f46e5; border-radius: 10px; font-size: 0.9rem;
-                       font-weight: 600; cursor: pointer; margin-top: 0.5rem; display: none; }
 
-    .steps { margin-top: 1rem; font-size: 0.82rem; color: #555; text-align: center; }
-    .step { padding: 0.2rem 0; opacity: 0.35; transition: opacity 0.3s; }
-    .step.active { opacity: 1; font-weight: 600; color: #4f46e5; }
-    .step.done { opacity: 0.6; }
-    .spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid #ddd;
-               border-top-color: #4f46e5; border-radius: 50%;
-               animation: spin 0.7s linear infinite; margin-right: 4px; vertical-align: middle; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    #error-box { display: none; margin-top: 1rem; background: #fff1f2;
-                 border: 1.5px solid #fecdd3; border-radius: 8px;
-                 padding: 0.6rem 0.75rem; font-size: 0.82rem; color: #9f1239; }
+    /* Toast notifications */
+    #toast-container { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+                       display: flex; flex-direction: column-reverse; gap: 0.5rem;
+                       width: calc(100% - 2rem); max-width: 420px; z-index: 999; }
+    .toast { border-radius: 10px; padding: 0.7rem 1rem; font-size: 0.85rem;
+             font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+             animation: slideUp 0.25s ease; display: flex; align-items: center; gap: 0.5rem; }
+    .toast.pending { background: #f1f5f9; color: #334155; }
+    .toast.success { background: #f0fdf4; color: #065f46; border: 1.5px solid #bbf7d0; }
+    .toast.error   { background: #fff1f2; color: #9f1239; border: 1.5px solid #fecdd3; }
+    .toast .spinner { flex-shrink: 0; width: 13px; height: 13px; border: 2px solid #cbd5e1;
+                      border-top-color: #4f46e5; border-radius: 50%;
+                      animation: spin 0.7s linear infinite; }
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(12px); }
+                         to   { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
 <div class="card">
   <h1>📚 Library Book Scanner</h1>
-  <p class="sub">Take three photos of the book, then enter the accession number.</p>
+  <p class="sub">Photo front, back, and ISBN close-up — then submit and move on.</p>
 
   <div class="photo-grid">
     <div class="upload-zone" id="zone-front">
@@ -98,37 +98,27 @@
   <button class="primary" id="submitBtn" onclick="submitBook()" disabled>
     📥 Submit Book
   </button>
-  <button class="secondary" id="retryBtn" onclick="retry()">🔄 Retry</button>
-
-  <div class="steps" id="steps" style="display:none">
-    <div class="step" id="step1">📷 Compressing images...</div>
-    <div class="step" id="step2">🤖 Gemini analysing book...</div>
-    <div class="step" id="step3">📊 Saving to sheet...</div>
-  </div>
-
-  <div id="error-box"></div>
 </div>
+
+<div id="toast-container"></div>
 
 <script>
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyzk__oqXukl9vEB7EEov6uwuzHligIanPtD0-vLK1oTB9TYaMGNINQC44Z3hEOBjG4/exec';
 
   const images = { front: null, back: null, isbn: null };
-
-  // front/back: 1200px wide, quality 0.82 — large text survives fine
-  // isbn: 1600px wide, quality 0.92 — preserve small digit clarity
-  const config = {
+  const compressionConfig = {
     front: { maxPx: 1200, quality: 0.82 },
     back:  { maxPx: 1200, quality: 0.82 },
     isbn:  { maxPx: 1600, quality: 0.92 }
   };
 
-  function setupUpload(key) {
+  ['front', 'back', 'isbn'].forEach(key => {
     document.getElementById('photo-' + key).addEventListener('change', function () {
       const file = this.files[0];
       if (!file) return;
-      compressImage(file, config[key].maxPx, config[key].quality).then(b64 => {
+      const { maxPx, quality } = compressionConfig[key];
+      compressImage(file, maxPx, quality).then(b64 => {
         images[key] = b64;
-        // show preview (use original for display)
         const reader = new FileReader();
         reader.onload = ev => {
           const img = document.getElementById('preview-' + key);
@@ -140,9 +130,7 @@
         updateSubmitBtn();
       });
     });
-  }
-
-  ['front', 'back', 'isbn'].forEach(setupUpload);
+  });
 
   function compressImage(file, maxPx, quality) {
     return new Promise(resolve => {
@@ -162,60 +150,36 @@
   }
 
   function updateSubmitBtn() {
-    const any = images.front || images.back || images.isbn;
-    document.getElementById('submitBtn').disabled = !any;
+    document.getElementById('submitBtn').disabled =
+      !images.front && !images.back && !images.isbn;
   }
 
-  function setStep(n) {
-    [1, 2, 3].forEach(i => {
-      const el = document.getElementById('step' + i);
-      el.classList.remove('active', 'done');
-      if (i < n)  el.classList.add('done');
-      if (i === n) el.classList.add('active');
-    });
-  }
-
-  async function submitBook() {
+  function submitBook() {
     const accession = document.getElementById('accession').value.trim();
-    if (!accession) { showError('Please enter Accession No.'); return; }
+    if (!accession) { showToast('Please enter Accession No.', 'error', 3000); return; }
 
     const imageList = [images.front, images.back, images.isbn].filter(Boolean);
+    const label = accession;
 
-    document.getElementById('submitBtn').disabled = true;
-    document.getElementById('retryBtn').style.display = 'none';
-    document.getElementById('error-box').style.display = 'none';
-    document.getElementById('steps').style.display = 'block';
-    setStep(1);
+    // Reset immediately — user can start next book
+    resetForm();
 
-    await new Promise(r => setTimeout(r, 400)); // let UI update
-    setStep(2);
+    // Fire and forget — toast shows result when done
+    const toast = showToast('⏳ Submitting ' + label + '...', 'pending');
 
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ images: imageList, accessionNo: accession }),
-        headers: { 'Content-Type': 'text/plain' }
-      });
-
-      setStep(3);
-      const result = await res.json();
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ images: imageList, accessionNo: accession }),
+      headers: { 'Content-Type': 'text/plain' }
+    })
+    .then(res => res.json())
+    .then(result => {
       if (!result.success) throw new Error(result.error);
-
-      document.getElementById('steps').style.display = 'none';
-      showSuccess('✅ "' + result.title + '" saved!');
-      setTimeout(resetForm, 2500);
-    } catch (err) {
-      document.getElementById('steps').style.display = 'none';
-      showError(err.message);
-      document.getElementById('retryBtn').style.display = 'block';
-      document.getElementById('submitBtn').disabled = false;
-    }
-  }
-
-  function retry() {
-    document.getElementById('error-box').style.display = 'none';
-    document.getElementById('retryBtn').style.display = 'none';
-    submitBook();
+      updateToast(toast, '✅ ' + label + ' — "' + result.title + '" saved!', 'success', 5000);
+    })
+    .catch(err => {
+      updateToast(toast, '❌ ' + label + ' failed: ' + err.message, 'error', 0);
+    });
   }
 
   function resetForm() {
@@ -226,25 +190,33 @@
       document.getElementById('zone-' + k).classList.remove('done');
     });
     document.getElementById('accession').value = '';
-    document.getElementById('error-box').style.display = 'none';
-    document.getElementById('retryBtn').style.display = 'none';
-    document.getElementById('steps').style.display = 'none';
     document.getElementById('submitBtn').disabled = true;
   }
 
-  function showError(msg) {
-    const el = document.getElementById('error-box');
-    el.textContent = '❌ ' + msg;
-    el.style.display = 'block';
+  function showToast(msg, type, duration) {
+    const container = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    if (type === 'pending') {
+      const spinner = document.createElement('div');
+      spinner.className = 'spinner';
+      el.appendChild(spinner);
+    }
+    const text = document.createElement('span');
+    text.textContent = msg;
+    el.appendChild(text);
+    container.appendChild(el);
+    if (duration) setTimeout(() => el.remove(), duration);
+    return el;
   }
 
-  function showSuccess(msg) {
-    const el = document.getElementById('error-box');
-    el.style.background = '#f0fdf4';
-    el.style.borderColor = '#bbf7d0';
-    el.style.color = '#065f46';
-    el.textContent = msg;
-    el.style.display = 'block';
+  function updateToast(el, msg, type, duration) {
+    el.className = 'toast ' + type;
+    el.innerHTML = '';
+    const text = document.createElement('span');
+    text.textContent = msg;
+    el.appendChild(text);
+    if (duration) setTimeout(() => el.remove(), duration);
   }
 </script>
 </body>
