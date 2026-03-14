@@ -76,7 +76,10 @@ Return raw JSON only, no markdown. Fill as many fields as you can, use null for 
       {
         method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify({ contents: [{ parts }] }),
+        payload: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
+        }),
         muteHttpExceptions: true
       }
     );
