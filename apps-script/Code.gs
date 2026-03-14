@@ -1,52 +1,59 @@
-const GEMINI_API_KEY = 'AIzaSyBTx-vnw7EcDu-9dwAoulFtCvflPhi0sNU';
+const SHEET_NAME = 'Library Book details';
+const SPREADSHEET_NAME = 'Library Book Scanner';
+
+function getSheet() {
+  const props = PropertiesService.getScriptProperties();
+  let ssId = props.getProperty('SPREADSHEET_ID');
+
+  let ss;
+  if (ssId) {
+    try {
+      ss = SpreadsheetApp.openById(ssId);
+    } catch (e) {
+      ssId = null;
+    }
+  }
+
+  if (!ssId) {
+    ss = SpreadsheetApp.create(SPREADSHEET_NAME);
+    props.setProperty('SPREADSHEET_ID', ss.getId());
+    Logger.log('Created new spreadsheet: ' + ss.getUrl());
+  }
+
+  let sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    // Remove default Sheet1 if empty
+    const defaultSheet = ss.getSheetByName('Sheet1');
+    if (defaultSheet && defaultSheet.getLastRow() === 0) ss.deleteSheet(defaultSheet);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Sl.No.', 'Accession No.', 'Title of the Book', 'Sub Title',
+      'Author', 'Editor', 'Compiler', 'Illustrator', 'Publisher',
+      'Edition', 'Volume No.', 'Series', 'Place', 'Price', 'Year',
+      'Pages', 'Size', 'Source', 'ISBN No.', 'Lost cost', 'Damage Quantity'
+    ]);
+    sheet.getRange(1, 1, 1, 21).setBackground('#FFFF00');
+  }
+
+  return sheet;
+}
 
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { image, accessionNo } = data;
+    const { isbn, accessionNo, price } = data;
 
-    // Step 1: Gemini extracts ISBN + Price from image
-    const parts = [
-      { inlineData: { mimeType: 'image/jpeg', data: image } },
-      { text: `Look at this book image. Extract ONLY the ISBN and price.
-Return raw JSON: {"isbn": "digits only no hyphens", "price": "with currency symbol or null"}
-Raw JSON only. No markdown.` }
-    ];
-
-    const gRes = UrlFetchApp.fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({ contents: [{ parts }] }),
-        muteHttpExceptions: true
-      }
-    );
-    const gJson = JSON.parse(gRes.getContentText());
-    if (!gJson.candidates || !gJson.candidates[0]) {
-      throw new Error('Gemini error: ' + JSON.stringify(gJson));
-    }
-    const gText = gJson.candidates[0].content.parts[0].text;
-    const { isbn, price } = JSON.parse(gText.replace(/```json|```/g, '').trim());
-
-    // Step 2: Open Library fetches all other metadata
+    // Open Library → all metadata
     const olRes  = UrlFetchApp.fetch(
       `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
     );
     const olJson = JSON.parse(olRes.getContentText());
     const book   = olJson[`ISBN:${isbn}`] ?? {};
 
-    // Step 3: Write to Sheet
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Library Catalog');
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow([
-        'Sl.No.', 'Accession No.', 'Title of the Book', 'Sub Title',
-        'Author', 'Editor', 'Compiler', 'Illustrator', 'Publisher',
-        'Edition', 'Volume No.', 'Series', 'Place', 'Price', 'Year',
-        'Pages', 'Size', 'Source', 'ISBN No.', 'Lost cost', 'Damage Quantity'
-      ]);
-      sheet.getRange(1, 1, 1, 21).setBackground('#FFFF00');
-    }
+    const sheet = getSheet();
 
     sheet.appendRow([
       sheet.getLastRow(), accessionNo,
