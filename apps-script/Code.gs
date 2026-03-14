@@ -1,15 +1,38 @@
+const GEMINI_API_KEY = 'AIzaSyBTx-vnw7EcDu-9dwAoulFtCvflPhi0sNU';
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { isbn, accessionNo, price } = data;
+    const { image, accessionNo } = data;
 
-    // Open Library → all metadata
+    // Step 1: Gemini extracts ISBN + Price from image
+    const parts = [
+      { inlineData: { mimeType: 'image/jpeg', data: image } },
+      { text: `Look at this book image. Extract ONLY the ISBN and price.
+Return raw JSON: {"isbn": "digits only no hyphens", "price": "with currency symbol or null"}
+Raw JSON only. No markdown.` }
+    ];
+
+    const gRes = UrlFetchApp.fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ contents: [{ parts }] }),
+        muteHttpExceptions: true
+      }
+    );
+    const gText = JSON.parse(gRes.getContentText()).candidates[0].content.parts[0].text;
+    const { isbn, price } = JSON.parse(gText.replace(/```json|```/g, '').trim());
+
+    // Step 2: Open Library fetches all other metadata
     const olRes  = UrlFetchApp.fetch(
       `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
     );
     const olJson = JSON.parse(olRes.getContentText());
     const book   = olJson[`ISBN:${isbn}`] ?? {};
 
+    // Step 3: Write to Sheet
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Library Catalog');
     if (sheet.getLastRow() === 0) {
       sheet.appendRow([
