@@ -1,32 +1,29 @@
 const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
 const SHEET_NAME = 'Library Book details';
+const FAILED_SHEET_NAME = 'Failed Submissions';
 const SPREADSHEET_NAME = 'Library Book Scanner';
 
-function getSheet() {
+function getSpreadsheet() {
   const props = PropertiesService.getScriptProperties();
   let ssId = props.getProperty('SPREADSHEET_ID');
-
   let ss;
   if (ssId) {
-    try {
-      ss = SpreadsheetApp.openById(ssId);
-    } catch (e) {
-      ssId = null;
-    }
+    try { ss = SpreadsheetApp.openById(ssId); } catch (e) { ssId = null; }
   }
-
   if (!ssId) {
     ss = SpreadsheetApp.create(SPREADSHEET_NAME);
     props.setProperty('SPREADSHEET_ID', ss.getId());
   }
+  return ss;
+}
 
+function getSheet(ss) {
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
     const defaultSheet = ss.getSheetByName('Sheet1');
     if (defaultSheet && defaultSheet.getLastRow() === 0) ss.deleteSheet(defaultSheet);
   }
-
   if (sheet.getLastRow() === 0) {
     sheet.appendRow([
       'Sl.No.', 'Accession No.', 'Title of the Book', 'Sub Title',
@@ -36,16 +33,60 @@ function getSheet() {
     ]);
     sheet.getRange(1, 1, 1, 21).setBackground('#FFFF00');
   }
-
   return sheet;
 }
 
+function getFailedSheet(ss) {
+  let sheet = ss.getSheetByName(FAILED_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(FAILED_SHEET_NAME);
+    sheet.appendRow(['Timestamp', 'Accession No.', 'Error', 'Action']);
+    sheet.getRange(1, 1, 1, 4).setBackground('#FFE0E0');
+  }
+  return sheet;
+}
+
+function callGemini(parts) {
+  const gRes = UrlFetchApp.fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
+      }),
+      muteHttpExceptions: true
+    }
+  );
+  const gJson = JSON.parse(gRes.getContentText());
+  if (!gJson.candidates || !gJson.candidates[0]) {
+    throw new Error('Gemini error: ' + JSON.stringify(gJson));
+  }
+  return JSON.parse(gJson.candidates[0].content.parts[0].text.replace(/```json|```/g, '').trim());
+}
+
+function callGeminiWithRetry(parts, maxRetries) {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) Utilities.sleep(3000 * attempt); // 3s, 6s backoff
+    try {
+      return callGemini(parts);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
 function doPost(e) {
+  const ss = getSpreadsheet();
+  let accessionNo = '?';
   try {
     const data = JSON.parse(e.postData.contents);
-    const { images, accessionNo } = data;
+    const { images, accessionNo: acc } = data;
+    accessionNo = acc;
 
-    // Build parts: one entry per image + the prompt text
     const parts = images.map(img => ({
       inlineData: { mimeType: 'image/jpeg', data: img }
     }));
@@ -73,27 +114,9 @@ Return raw JSON only, no markdown. Use null only if you truly don't know the val
   "price": "price with currency symbol as printed on book or null"
 }` });
 
-    const gRes = UrlFetchApp.fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
-        }),
-        muteHttpExceptions: true
-      }
-    );
+    const book = callGeminiWithRetry(parts, 2);
 
-    const gJson = JSON.parse(gRes.getContentText());
-    if (!gJson.candidates || !gJson.candidates[0]) {
-      throw new Error('Gemini error: ' + JSON.stringify(gJson));
-    }
-    const gText = gJson.candidates[0].content.parts[0].text;
-    const book = JSON.parse(gText.replace(/```json|```/g, '').trim());
-
-    const sheet = getSheet();
+    const sheet = getSheet(ss);
     sheet.appendRow([
       sheet.getLastRow(), accessionNo,
       book.title       ?? null,
@@ -115,8 +138,18 @@ Return raw JSON only, no markdown. Use null only if you truly don't know the val
       book.isbn        ?? null, 0, 0
     ]);
 
-    return respond({ success: true, title: book.title ?? isbn });
+    return respond({ success: true, title: book.title ?? accessionNo });
   } catch (err) {
+    // All retries exhausted — log to Failed Submissions sheet
+    try {
+      const failedSheet = getFailedSheet(ss);
+      failedSheet.appendRow([
+        new Date().toLocaleString(),
+        accessionNo,
+        err.message,
+        'Re-scan required'
+      ]);
+    } catch (_) {}
     return respond({ success: false, error: err.message });
   }
 }
