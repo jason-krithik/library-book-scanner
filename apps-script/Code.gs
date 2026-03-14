@@ -1,3 +1,4 @@
+const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
 const SHEET_NAME = 'Library Book details';
 const SPREADSHEET_NAME = 'Library Book Scanner';
 
@@ -17,13 +18,11 @@ function getSheet() {
   if (!ssId) {
     ss = SpreadsheetApp.create(SPREADSHEET_NAME);
     props.setProperty('SPREADSHEET_ID', ss.getId());
-    Logger.log('Created new spreadsheet: ' + ss.getUrl());
   }
 
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    // Remove default Sheet1 if empty
     const defaultSheet = ss.getSheetByName('Sheet1');
     if (defaultSheet && defaultSheet.getLastRow() === 0) ss.deleteSheet(defaultSheet);
   }
@@ -44,34 +43,71 @@ function getSheet() {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { isbn, accessionNo, price } = data;
+    const { images, accessionNo } = data;
 
-    // Open Library → all metadata
-    const olRes  = UrlFetchApp.fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
+    // Build parts: one entry per image + the prompt text
+    const parts = images.map(img => ({
+      inlineData: { mimeType: 'image/jpeg', data: img }
+    }));
+    parts.push({ text: `Look at these book cover images and extract all available details.
+Return raw JSON only, no markdown. Fill as many fields as you can, use null for unknown fields:
+{
+  "title": "full title of the book",
+  "subtitle": "subtitle or null",
+  "author": "primary author full name",
+  "editor": "editor name or null",
+  "compiler": "compiler name or null",
+  "illustrator": "illustrator name or null",
+  "publisher": "publisher name",
+  "edition": "edition e.g. 1st Edition or null",
+  "volume": "volume number or null",
+  "series": "series name or null",
+  "place": "city of publication or null",
+  "year": "publication year as string",
+  "pages": "number of pages as integer or null",
+  "size": "book dimensions e.g. 24cm or null",
+  "source": "where the book is typically sourced or null",
+  "isbn": "ISBN digits only no hyphens or null",
+  "price": "price with currency symbol or null"
+}` });
+
+    const gRes = UrlFetchApp.fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ contents: [{ parts }] }),
+        muteHttpExceptions: true
+      }
     );
-    const olJson = JSON.parse(olRes.getContentText());
-    const book   = olJson[`ISBN:${isbn}`] ?? {};
+
+    const gJson = JSON.parse(gRes.getContentText());
+    if (!gJson.candidates || !gJson.candidates[0]) {
+      throw new Error('Gemini error: ' + JSON.stringify(gJson));
+    }
+    const gText = gJson.candidates[0].content.parts[0].text;
+    const book = JSON.parse(gText.replace(/```json|```/g, '').trim());
 
     const sheet = getSheet();
-
     sheet.appendRow([
       sheet.getLastRow(), accessionNo,
-      book.title                     ?? null,
-      book.subtitle                  ?? null,
-      book.authors?.[0]?.name        ?? null,
-      book.by_statement              ?? null,
-      null,
-      book.contributions?.[0]        ?? null,
-      book.publishers?.[0]?.name     ?? null,
-      book.edition_name              ?? null,
-      book.volumes                   ?? null,
-      book.series?.[0]?.name         ?? null,
-      book.publish_places?.[0]?.name ?? null,
-      price,
-      book.publish_date              ?? null,
-      book.number_of_pages           ?? null,
-      null, null, isbn, 0, 0
+      book.title       ?? null,
+      book.subtitle    ?? null,
+      book.author      ?? null,
+      book.editor      ?? null,
+      book.compiler    ?? null,
+      book.illustrator ?? null,
+      book.publisher   ?? null,
+      book.edition     ?? null,
+      book.volume      ?? null,
+      book.series      ?? null,
+      book.place       ?? null,
+      book.price       ?? null,
+      book.year        ?? null,
+      book.pages       ?? null,
+      book.size        ?? null,
+      book.source      ?? null,
+      book.isbn        ?? null, 0, 0
     ]);
 
     return respond({ success: true, title: book.title ?? isbn });
