@@ -22,7 +22,11 @@ Raw JSON only. No markdown.` }
         muteHttpExceptions: true
       }
     );
-    const gText = JSON.parse(gRes.getContentText()).candidates[0].content.parts[0].text;
+    const gJson = JSON.parse(gRes.getContentText());
+    if (!gJson.candidates || !gJson.candidates[0]) {
+      throw new Error('Gemini error: ' + JSON.stringify(gJson));
+    }
+    const gText = gJson.candidates[0].content.parts[0].text;
     const { isbn, price } = JSON.parse(gText.replace(/```json|```/g, '').trim());
 
     // Step 2: Open Library fetches all other metadata
