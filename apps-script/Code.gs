@@ -49,8 +49,10 @@ function doPost(e) {
     const parts = images.map(img => ({
       inlineData: { mimeType: 'image/jpeg', data: img }
     }));
-    parts.push({ text: `Look at these book cover images and extract all available details.
-Return raw JSON only, no markdown. Fill as many fields as you can, use null for unknown fields:
+    parts.push({ text: `You are a library cataloguing assistant. Look at these book cover images and identify the book.
+Then use BOTH what you can see in the images AND your training knowledge about this book to fill in as many fields as possible.
+Do not limit yourself to only what is visible — if you recognise the book, use your knowledge to fill edition, pages, place, series, etc.
+Return raw JSON only, no markdown. Use null only if you truly don't know the value:
 {
   "title": "full title of the book",
   "subtitle": "subtitle or null",
@@ -66,9 +68,9 @@ Return raw JSON only, no markdown. Fill as many fields as you can, use null for 
   "year": "publication year as string",
   "pages": "number of pages as integer or null",
   "size": "book dimensions e.g. 24cm or null",
-  "source": "where the book is typically sourced or null",
+  "source": "original country or source of publication or null",
   "isbn": "ISBN digits only no hyphens or null",
-  "price": "price with currency symbol or null"
+  "price": "price with currency symbol as printed on book or null"
 }` });
 
     const gRes = UrlFetchApp.fetch(
