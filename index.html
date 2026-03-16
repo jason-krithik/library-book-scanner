@@ -85,6 +85,16 @@
     .drawer-row .row-label { flex: 1; min-width: 0; overflow: hidden;
                              text-overflow: ellipsis; white-space: nowrap; }
     .drawer-row .row-acc   { font-weight: 700; flex-shrink: 0; }
+    .retry-btn { background: #e11d48; color: white; border: none; border-radius: 6px;
+                 padding: 0.35rem 0.65rem; font-size: 0.72rem; font-weight: 600;
+                 cursor: pointer; flex-shrink: 0; white-space: nowrap;
+                 min-height: 32px; line-height: 1; }
+    .retry-btn:active { opacity: 0.75; }
+    @keyframes highlight-field {
+      0%, 100% { border-color: #e2e8f0; box-shadow: none; }
+      50%       { border-color: #f43f5e; box-shadow: 0 0 0 3px rgba(244,63,94,0.15); }
+    }
+    .field-highlight { animation: highlight-field 0.7s ease 2; }
     #drawer-overlay { position: fixed; inset: 0; z-index: 997; display: none; }
     #drawer-overlay.open { display: block; }
 
@@ -380,6 +390,14 @@
         row.innerHTML = `<span style="flex-shrink:0">${icon}</span>
           <span class="row-acc">${acc}</span>
           <span class="row-label">${b.label}</span>`;
+        if (b.state === 'failed') {
+          const btn = document.createElement('button');
+          btn.className = 'retry-btn';
+          btn.textContent = 'Try Again';
+          btn.setAttribute('aria-label', 'Retry submission for ' + acc);
+          btn.onclick = () => StatusTracker.retry(acc);
+          row.appendChild(btn);
+        }
         list.appendChild(row);
       }
     }
@@ -419,7 +437,21 @@
       document.getElementById('pill-chevron').classList.remove('open');
     }
 
-    return { add, done, fail, toggleDrawer, closeDrawer };
+    function retry(accession) {
+      books.delete(accession);
+      render();
+      closeDrawer();
+      const accInput = document.getElementById('accession');
+      accInput.value = accession;
+      accInput.focus();
+      accInput.classList.remove('field-highlight');
+      // Force reflow so re-adding the class restarts the animation
+      void accInput.offsetWidth;
+      accInput.classList.add('field-highlight');
+      accInput.addEventListener('animationend', () => accInput.classList.remove('field-highlight'), { once: true });
+    }
+
+    return { add, done, fail, toggleDrawer, closeDrawer, retry };
   })();
 
   document.addEventListener('DOMContentLoaded', initLibraryScreen);
