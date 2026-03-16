@@ -34,8 +34,11 @@
             color: #555; margin-bottom: 0.25rem; }
     input[type="text"] { width: 100%; padding: 0.55rem 0.7rem;
                          border: 1.5px solid #e2e8f0; border-radius: 8px;
-                         font-size: 0.9rem; margin-bottom: 1rem; }
+                         font-size: 0.9rem; margin-bottom: 0.25rem; }
     input:focus { outline: none; border-color: #4f46e5; }
+    input.input-error { border-color: #f43f5e; }
+    .field-error { font-size: 0.75rem; color: #e11d48; margin-bottom: 0.75rem;
+                   min-height: 1rem; display: block; }
 
     button.primary { width: 100%; padding: 0.85rem; background: #4f46e5; color: white;
                      border: none; border-radius: 10px; font-size: 1rem;
@@ -59,6 +62,10 @@
                     animation: spin 0.7s linear infinite; flex-shrink: 0; }
     .pill-chevron { font-size: 0.75rem; opacity: 0.7; transition: transform 0.2s; }
     .pill-chevron.open { transform: rotate(180deg); }
+    .pill-dismiss { font-size: 1rem; opacity: 0.6; line-height: 1; padding: 0.15rem 0.2rem;
+                    background: none; border: none; color: white; cursor: pointer;
+                    flex-shrink: 0; margin-left: 0.25rem; }
+    .pill-dismiss:hover { opacity: 1; }
 
     /* Drawer */
     #status-drawer { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -115,6 +122,12 @@
                margin-bottom: 0.75rem; }
     .lib-btn:hover { background: #4f46e5; color: white; }
 
+    /* Ready confirmation */
+    #ready-msg { font-size: 0.8rem; color: #059669; font-weight: 600;
+                 text-align: center; margin-bottom: 0.75rem; min-height: 1.1rem;
+                 opacity: 0; transition: opacity 0.3s; }
+    #ready-msg.show { opacity: 1; }
+
     /* Library badge on scanner */
     #lib-badge { font-size: 0.75rem; color: #6366f1; margin-bottom: 1.25rem;
                  display: flex; align-items: center; gap: 0.4rem; }
@@ -136,6 +149,8 @@
 <div class="card" id="scanner-card" style="display:none">
   <h1>📚 Library Book Scanner</h1>
   <p class="sub">Photo front, back, and ISBN close-up — then submit and move on.</p>
+
+  <div id="ready-msg">✓ Ready for next book</div>
 
   <div id="lib-badge">
     <span id="lib-badge-text"></span>
@@ -159,7 +174,7 @@
       <input type="file" id="photo-isbn" accept="image/*" capture="environment">
       <div class="icon">🔢</div>
       <div class="label">ISBN</div>
-      <div class="hint">Close-up</div>
+      <div class="hint">Barcode</div>
     </div>
   </div>
 
@@ -170,7 +185,8 @@
   </div>
 
   <label>Accession No. *</label>
-  <input type="text" id="accession" placeholder="e.g. LIB-0042">
+  <input type="text" id="accession" placeholder="e.g. LIB-0042" inputmode="text" autocomplete="off">
+  <span class="field-error" id="accession-error"></span>
 
   <button class="primary" id="submitBtn" onclick="submitBook()" disabled>
     📥 Submit Book
@@ -198,6 +214,7 @@
     </span>
   </div>
   <span class="pill-chevron" id="pill-chevron">▲</span>
+  <button class="pill-dismiss" id="pill-dismiss" aria-label="Dismiss" onclick="StatusTracker.dismiss(event)">×</button>
 </div>
 
 <script>
@@ -290,8 +307,14 @@
   }
 
   function submitBook() {
-    const accession = document.getElementById('accession').value.trim();
-    if (!accession) { alert('Please enter Accession No.'); return; }
+    const accInput = document.getElementById('accession');
+    const accession = accInput.value.trim();
+    if (!accession) {
+      accInput.classList.add('input-error');
+      document.getElementById('accession-error').textContent = 'Accession No. is required';
+      accInput.focus();
+      return;
+    }
 
     const imageList = [images.front, images.back, images.isbn].filter(Boolean);
 
@@ -324,7 +347,12 @@
       document.getElementById('zone-' + k).classList.remove('done');
     });
     document.getElementById('accession').value = '';
+    document.getElementById('accession-error').textContent = '';
     document.getElementById('submitBtn').disabled = true;
+
+    const msg = document.getElementById('ready-msg');
+    msg.classList.add('show');
+    setTimeout(() => msg.classList.remove('show'), 2500);
   }
 
   const StatusTracker = (() => {
@@ -370,7 +398,7 @@
           closeDrawer();
           books.clear();
           renderDrawer();
-        }, 4000);
+        }, 6000);
       }
 
       renderDrawer();
@@ -437,6 +465,15 @@
       document.getElementById('pill-chevron').classList.remove('open');
     }
 
+    function dismiss(e) {
+      e.stopPropagation();
+      if (hideTimer) clearTimeout(hideTimer);
+      document.getElementById('status-pill').style.display = 'none';
+      closeDrawer();
+      books.clear();
+      renderDrawer();
+    }
+
     function retry(accession) {
       books.delete(accession);
       render();
@@ -451,8 +488,17 @@
       accInput.addEventListener('animationend', () => accInput.classList.remove('field-highlight'), { once: true });
     }
 
-    return { add, done, fail, toggleDrawer, closeDrawer, retry };
+    return { add, done, fail, toggleDrawer, closeDrawer, retry, dismiss };
   })();
+
+  document.getElementById('accession').addEventListener('input', function () {
+    this.classList.remove('input-error');
+    document.getElementById('accession-error').textContent = '';
+  });
+
+  document.getElementById('accession').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitBook(); }
+  });
 
   document.addEventListener('DOMContentLoaded', initLibraryScreen);
 </script>
