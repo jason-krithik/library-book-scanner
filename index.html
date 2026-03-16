@@ -386,8 +386,9 @@
       pill.classList.toggle('has-failure', failed > 0 && processing === 0);
       pill.classList.toggle('all-done',    failed === 0 && processing === 0 && done > 0);
 
-      // Show pill
-      pill.style.display = 'flex';
+      // Show pill only if drawer is not open
+      const drawerOpen = document.getElementById('status-drawer').classList.contains('open');
+      if (!drawerOpen) pill.style.display = 'flex';
 
       renderDrawer();
     }
@@ -446,7 +447,7 @@
       drawer.classList.toggle('open', !isOpen);
       overlay.classList.toggle('open', !isOpen);
       chevron.classList.toggle('open', !isOpen);
-      pill.style.display = isOpen ? 'none' : 'flex';
+      pill.style.display = isOpen ? 'flex' : 'none';
     }
 
     function closeDrawer() {
@@ -458,7 +459,6 @@
 
     function dismiss(e) {
       e.stopPropagation();
-      if (hideTimer) clearTimeout(hideTimer);
       document.getElementById('status-pill').style.display = 'none';
       closeDrawer();
       books.clear();
