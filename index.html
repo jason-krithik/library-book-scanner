@@ -358,7 +358,6 @@
   const StatusTracker = (() => {
     // Map of accession -> { state: 'processing'|'done'|'failed', label: string }
     const books = new Map();
-    let hideTimer = null;
 
     function counts() {
       let processing = 0, done = 0, failed = 0;
@@ -389,17 +388,6 @@
 
       // Show pill
       pill.style.display = 'flex';
-
-      // Auto-hide when everything settled with no failures
-      if (hideTimer) clearTimeout(hideTimer);
-      if (processing === 0 && failed === 0 && done > 0) {
-        hideTimer = setTimeout(() => {
-          pill.style.display = 'none';
-          closeDrawer();
-          books.clear();
-          renderDrawer();
-        }, 6000);
-      }
 
       renderDrawer();
     }
