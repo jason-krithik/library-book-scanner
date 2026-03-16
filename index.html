@@ -37,7 +37,7 @@
             color: #555; margin-bottom: 0.25rem; }
     input[type="text"] { width: 100%; padding: 0.55rem 0.7rem;
                          border: 1.5px solid #e2e8f0; border-radius: 8px;
-                         font-size: 0.9rem; margin-bottom: 0.25rem; }
+                         font-size: 1rem; margin-bottom: 0.25rem; }
     input:focus { outline: none; border-color: #4f46e5; }
     input.input-error { border-color: #f43f5e; }
     .field-error { font-size: 0.75rem; color: #e11d48; margin-bottom: 0.75rem;
@@ -484,6 +484,12 @@
 
     return { add, done, fail, toggleDrawer, closeDrawer, retry, dismiss };
   })();
+
+  document.getElementById('accession').addEventListener('blur', function () {
+    // iOS leaves a scroll offset after keyboard dismisses — reset it
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+  });
 
   document.getElementById('accession').addEventListener('input', function () {
     this.classList.remove('input-error');
