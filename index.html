@@ -52,7 +52,8 @@
                    padding: 0.65rem 1rem; display: none; align-items: center;
                    gap: 0.6rem; box-shadow: 0 4px 20px rgba(0,0,0,0.25);
                    cursor: pointer; user-select: none;
-                   transition: background 0.25s; }
+                   transition: background 0.25s, bottom 0.3s cubic-bezier(0.4,0,0.2,1); }
+    #status-pill.above-drawer { bottom: calc(55vh + 1rem); }
     #status-pill.has-failure { background: #be123c; }
     #status-pill.all-done    { background: #065f46; }
     .pill-counts { display: flex; gap: 0.75rem; flex: 1; font-size: 0.82rem; font-weight: 500; }
@@ -453,16 +454,19 @@
       const drawer  = document.getElementById('status-drawer');
       const overlay = document.getElementById('drawer-overlay');
       const chevron = document.getElementById('pill-chevron');
+      const pill    = document.getElementById('status-pill');
       const isOpen  = drawer.classList.contains('open');
       drawer.classList.toggle('open', !isOpen);
       overlay.classList.toggle('open', !isOpen);
       chevron.classList.toggle('open', !isOpen);
+      pill.classList.toggle('above-drawer', !isOpen);
     }
 
     function closeDrawer() {
       document.getElementById('status-drawer').classList.remove('open');
       document.getElementById('drawer-overlay').classList.remove('open');
       document.getElementById('pill-chevron').classList.remove('open');
+      document.getElementById('status-pill').classList.remove('above-drawer');
     }
 
     function dismiss(e) {
