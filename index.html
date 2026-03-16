@@ -89,12 +89,48 @@
     #drawer-overlay.open { display: block; }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Library selection screen */
+    #library-screen { display: flex; align-items: center; justify-content: center;
+                      min-height: 100vh; padding: 1rem; }
+    .lib-card { background: white; border-radius: 16px; padding: 2rem 1.75rem;
+                width: 100%; max-width: 420px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1); text-align: center; }
+    .lib-card h2 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+    .lib-card p  { color: #777; font-size: 0.85rem; margin-bottom: 1.75rem; }
+    .lib-btn { display: block; width: 100%; padding: 1rem;
+               border: 2px solid #4f46e5; border-radius: 12px;
+               background: white; color: #4f46e5;
+               font-size: 1rem; font-weight: 700; cursor: pointer;
+               margin-bottom: 0.75rem; }
+    .lib-btn:hover { background: #4f46e5; color: white; }
+
+    /* Library badge on scanner */
+    #lib-badge { font-size: 0.75rem; color: #6366f1; margin-bottom: 1.25rem;
+                 display: flex; align-items: center; gap: 0.4rem; }
+    #lib-badge button { background: none; border: none; color: #6366f1;
+                        cursor: pointer; font-size: 0.75rem;
+                        text-decoration: underline; padding: 0; }
   </style>
 </head>
 <body>
-<div class="card">
+<div id="library-screen" style="display:none">
+  <div class="lib-card">
+    <h2>📚 Which library?</h2>
+    <p>Choose the library you are scanning for. This will be remembered on this device.</p>
+    <button class="lib-btn" onclick="selectLibrary('senior')">Senior Library</button>
+    <button class="lib-btn" onclick="selectLibrary('junior')">Junior Library</button>
+  </div>
+</div>
+
+<div class="card" id="scanner-card" style="display:none">
   <h1>📚 Library Book Scanner</h1>
   <p class="sub">Photo front, back, and ISBN close-up — then submit and move on.</p>
+
+  <div id="lib-badge">
+    <span id="lib-badge-text"></span>
+    <button onclick="changeLibrary()">change</button>
+  </div>
 
   <div class="photo-grid">
     <div class="upload-zone" id="zone-front">
@@ -155,6 +191,43 @@
 </div>
 
 <script>
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = name + '=' + value + '; expires=' + expires + '; path=/';
+  }
+  function getCookie(name) {
+    return document.cookie.split('; ').reduce((r, c) => {
+      const [k, v] = c.split('=');
+      return k === name ? v : r;
+    }, null);
+  }
+
+  function initLibraryScreen() {
+    const lib = getCookie('libraryType');
+    if (lib) {
+      showScanner(lib);
+    } else {
+      document.getElementById('library-screen').style.display = 'flex';
+    }
+  }
+
+  function selectLibrary(type) {
+    setCookie('libraryType', type, 365);
+    document.getElementById('library-screen').style.display = 'none';
+    showScanner(type);
+  }
+
+  function showScanner(type) {
+    const label = type === 'junior' ? 'Junior Library' : 'Senior Library';
+    document.getElementById('lib-badge-text').textContent = label;
+    document.getElementById('scanner-card').style.display = 'block';
+  }
+
+  function changeLibrary() {
+    document.cookie = 'libraryType=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+    location.reload();
+  }
+
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyzk__oqXukl9vEB7EEov6uwuzHligIanPtD0-vLK1oTB9TYaMGNINQC44Z3hEOBjG4/exec';
 
   const images = { front: null, back: null, isbn: null };
@@ -220,7 +293,7 @@
 
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      body: JSON.stringify({ images: imageList, accessionNo: accession }),
+      body: JSON.stringify({ images: imageList, accessionNo: accession, library: getCookie('libraryType') || 'senior' }),
       headers: { 'Content-Type': 'text/plain' }
     })
     .then(res => res.json())
@@ -348,6 +421,8 @@
 
     return { add, done, fail, toggleDrawer, closeDrawer };
   })();
+
+  document.addEventListener('DOMContentLoaded', initLibraryScreen);
 </script>
 </body>
 </html>

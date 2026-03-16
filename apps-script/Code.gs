@@ -1,6 +1,12 @@
 const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
-const SHEET_NAME = 'Library Book details';
-const FAILED_SHEET_NAME = 'Failed Submissions';
+const SHEET_NAMES = {
+  senior: 'Senior Library',
+  junior: 'Junior Library'
+};
+const FAILED_SHEET_NAMES = {
+  senior: 'Failed Submissions - Senior',
+  junior: 'Failed Submissions - Junior'
+};
 const SPREADSHEET_NAME = 'Library Book Scanner';
 
 function getSpreadsheet() {
@@ -17,10 +23,11 @@ function getSpreadsheet() {
   return ss;
 }
 
-function getSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAME);
+function getSheet(ss, library) {
+  const sheetName = SHEET_NAMES[library] || SHEET_NAMES.senior;
+  let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
+    sheet = ss.insertSheet(sheetName);
     const defaultSheet = ss.getSheetByName('Sheet1');
     if (defaultSheet && defaultSheet.getLastRow() === 0) ss.deleteSheet(defaultSheet);
   }
@@ -36,10 +43,11 @@ function getSheet(ss) {
   return sheet;
 }
 
-function getFailedSheet(ss) {
-  let sheet = ss.getSheetByName(FAILED_SHEET_NAME);
+function getFailedSheet(ss, library) {
+  const sheetName = FAILED_SHEET_NAMES[library] || FAILED_SHEET_NAMES.senior;
+  let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    sheet = ss.insertSheet(FAILED_SHEET_NAME);
+    sheet = ss.insertSheet(sheetName);
     sheet.appendRow(['Timestamp', 'Accession No.', 'Error', 'Action']);
     sheet.getRange(1, 1, 1, 4).setBackground('#FFE0E0');
   }
@@ -82,9 +90,11 @@ function callGeminiWithRetry(parts, maxRetries) {
 function doPost(e) {
   const ss = getSpreadsheet();
   let accessionNo = '?';
+  let library = 'senior';
   try {
     const data = JSON.parse(e.postData.contents);
     const { images, accessionNo: acc } = data;
+    library = (data.library === 'junior') ? 'junior' : 'senior';
     accessionNo = acc;
 
     const parts = images.map(img => ({
@@ -116,7 +126,7 @@ Return raw JSON only, no markdown. Use null only if you truly don't know the val
 
     const book = callGeminiWithRetry(parts, 2);
 
-    const sheet = getSheet(ss);
+    const sheet = getSheet(ss, library);
     sheet.appendRow([
       sheet.getLastRow(), accessionNo,
       book.title       ?? null,
@@ -142,7 +152,7 @@ Return raw JSON only, no markdown. Use null only if you truly don't know the val
   } catch (err) {
     // All retries exhausted — log to Failed Submissions sheet
     try {
-      const failedSheet = getFailedSheet(ss);
+      const failedSheet = getFailedSheet(ss, library);
       failedSheet.appendRow([
         new Date().toLocaleString(),
         accessionNo,
