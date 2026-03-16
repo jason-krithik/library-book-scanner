@@ -127,26 +127,32 @@ Return raw JSON only, no markdown. Use null only if you truly don't know the val
     const book = callGeminiWithRetry(parts, 2);
 
     const sheet = getSheet(ss, library);
-    sheet.appendRow([
-      sheet.getLastRow(), accessionNo,
-      book.title       ?? null,
-      book.subtitle    ?? null,
-      book.author      ?? null,
-      book.editor      ?? null,
-      book.compiler    ?? null,
-      book.illustrator ?? null,
-      book.publisher   ?? null,
-      book.edition     ?? null,
-      book.volume      ?? null,
-      book.series      ?? null,
-      book.place       ?? null,
-      book.price       ?? null,
-      book.year        ?? null,
-      book.pages       ?? null,
-      book.size        ?? null,
-      book.source      ?? null,
-      book.isbn        ?? null, 0, 0
-    ]);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      sheet.appendRow([
+        sheet.getLastRow(), accessionNo,
+        book.title       ?? null,
+        book.subtitle    ?? null,
+        book.author      ?? null,
+        book.editor      ?? null,
+        book.compiler    ?? null,
+        book.illustrator ?? null,
+        book.publisher   ?? null,
+        book.edition     ?? null,
+        book.volume      ?? null,
+        book.series      ?? null,
+        book.place       ?? null,
+        book.price       ?? null,
+        book.year        ?? null,
+        book.pages       ?? null,
+        book.size        ?? null,
+        book.source      ?? null,
+        book.isbn        ?? null, 0, 0
+      ]);
+    } finally {
+      lock.releaseLock();
+    }
 
     return respond({ success: true, title: book.title ?? accessionNo });
   } catch (err) {
