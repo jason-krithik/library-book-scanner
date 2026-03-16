@@ -54,6 +54,45 @@ function getFailedSheet(ss, library) {
   return sheet;
 }
 
+function lookupOpenLibrary(isbn) {
+  try {
+    const res = UrlFetchApp.fetch(
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`,
+      { muteHttpExceptions: true }
+    );
+    const json = JSON.parse(res.getContentText());
+    const data = json[`ISBN:${isbn}`];
+    if (!data) return {};
+
+    // Extract year from publish_date which can be "2005", "January 2005", etc.
+    const yearMatch = (data.publish_date || '').match(/\d{4}/);
+
+    return {
+      title:      data.title                     || null,
+      subtitle:   data.subtitle                  || null,
+      author:     data.authors?.[0]?.name        || null,
+      publisher:  data.publishers?.[0]?.name     || null,
+      place:      data.publish_places?.[0]?.name || null,
+      year:       yearMatch ? yearMatch[0]        : null,
+      pages:      data.number_of_pages           || null,
+      edition:    data.edition_name              || null,
+      series:     data.series?.[0]?.name         || null,
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
+function mergeOpenLibrary(book, olData) {
+  // Only fill fields that Gemini left null — never override what it found
+  for (const key of Object.keys(olData)) {
+    if ((book[key] === null || book[key] === undefined) && olData[key]) {
+      book[key] = olData[key];
+    }
+  }
+  return book;
+}
+
 function callGemini(parts) {
   const gRes = UrlFetchApp.fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -100,31 +139,48 @@ function doPost(e) {
     const parts = images.map(img => ({
       inlineData: { mimeType: 'image/jpeg', data: img }
     }));
-    parts.push({ text: `You are a library cataloguing assistant. Look at these book cover images and identify the book.
-Then use BOTH what you can see in the images AND your training knowledge about this book to fill in as many fields as possible.
-Do not limit yourself to only what is visible — if you recognise the book, use your knowledge to fill edition, pages, place, series, etc.
-Return raw JSON only, no markdown. Use null only if you truly don't know the value:
+    parts.push({ text: `You are a library cataloguing assistant.
+You have been given photos of a book (front cover, back cover, and ISBN/barcode close-up).
+
+STEP 1 — READ THE IMAGES CAREFULLY:
+Scan every part of every image for text. Specifically look for:
+- Front cover: title, subtitle, author, editor ("Edited by"), compiler ("Compiled by"), illustrator, series name, volume number, edition
+- Back cover: price (near barcode, e.g. "Rs. 250" or "₹250"), publisher, ISBN, series info, description
+- Spine: series name, volume, publisher
+- ISBN image: extract the full ISBN number from the barcode digits or printed text
+- Any small print anywhere: edition details, publication place, year
+
+STEP 2 — USE YOUR KNOWLEDGE:
+If you recognise the book from its title/author/publisher, use your training knowledge to fill fields not visible in the images (year, place, pages, edition, series, etc.).
+
+Return raw JSON only, no markdown. Use null only if truly unknown:
 {
-  "title": "full title of the book",
+  "title": "full title",
   "subtitle": "subtitle or null",
-  "author": "primary author full name",
-  "editor": "editor name or null",
-  "compiler": "compiler name or null",
-  "illustrator": "illustrator name or null",
+  "author": "primary author full name or null",
+  "editor": "editor full name (look for 'Edited by' on cover) or null",
+  "compiler": "compiler full name (look for 'Compiled by') or null",
+  "illustrator": "illustrator full name or null",
   "publisher": "publisher name",
-  "edition": "edition e.g. 1st Edition or null",
+  "edition": "e.g. 1st Edition, 2nd Edition or null",
   "volume": "volume number or null",
   "series": "series name or null",
   "place": "city of publication or null",
-  "year": "publication year as string",
-  "pages": "number of pages as integer or null",
+  "year": "publication year as 4-digit string or null",
+  "pages": number of pages as integer or null,
   "size": "book dimensions e.g. 24cm or null",
-  "source": "original country or source of publication or null",
+  "source": "country of origin or null",
   "isbn": "ISBN digits only no hyphens or null",
-  "price": "price with currency symbol as printed on book or null"
+  "price": "price as printed on book e.g. Rs. 250 or null"
 }` });
 
-    const book = callGeminiWithRetry(parts, 2);
+    let book = callGeminiWithRetry(parts, 2);
+
+    // Free Open Library lookup — fills any fields Gemini left null
+    if (book.isbn) {
+      const olData = lookupOpenLibrary(book.isbn);
+      book = mergeOpenLibrary(book, olData);
+    }
 
     const sheet = getSheet(ss, library);
     const lock = LockService.getScriptLock();
